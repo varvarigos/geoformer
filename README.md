@@ -26,11 +26,11 @@ pip install -r requirements.txt
 ```
 
 Key dependencies:
-- PyTorch >= 2.0.0
-- PyTorch Geometric >= 2.3.0
+- PyTorch
+- PyTorch Geometric
 - NumPy, SciPy, scikit-learn
 - matplotlib, seaborn, pandas
-- geoopt >= 0.5.0
+- geoopt
 
 ## 🚀 Quick Start
 
@@ -211,30 +211,3 @@ This implementation is based on the concept of geometry-aware graph transformers
    - Exponential map: exp_x(v) maps tangent vector to manifold
    - Logarithmic map: log_x(y) maps manifold point to tangent space
    - Geodesic distance: Shortest path in curved space
-
-## 📝 Citation
-
-If you use this code in your research, please cite:
-
-```bibtex
-@article{geoformer2025,
-  title={GeoFormer: Geometry-Aware Graph Transformer for Non-Euclidean Learning},
-  author={[Your Name]},
-  journal={arXiv preprint},
-  year={2025}
-}
-```
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## 📄 License
-
-This project is licensed under the MIT License.
-
-## 🙏 Acknowledgments
-
-- PyTorch Geometric team for the graph learning framework
-- Geoopt for Riemannian optimization tools
-- Research on hyperbolic and spherical neural networks
