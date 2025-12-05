@@ -1,0 +1,57 @@
+# GeoFormer Configuration File
+
+# Model Configuration
+model:
+  type: 'geoformer_mix'  # Options: 'hygt', 'spgt', 'geoformer_mix'
+  hidden_channels: 64
+  num_layers: 2
+  num_heads: 8
+  dropout: 0.5
+  
+  # Geometry-specific parameters
+  hyperbolic_curvature: -1.0
+  spherical_curvature: 1.0
+  
+  # For GeoFormer-Mix: curvatures per head (null = default split)
+  curvatures: null
+
+# Dataset Configuration
+dataset:
+  name: 'PROTEINS'  # Options: 'PROTEINS', 'AIDS', 'MUTAG', 'CORA', 'AIRPORT'
+  root: './data'
+  batch_size: 64
+  train_ratio: 0.8
+  val_ratio: 0.1
+  test_ratio: 0.1
+  seed: 42
+
+# Training Configuration
+training:
+  num_epochs: 100
+  learning_rate: 0.0001  # Lowered for manifold stability
+  weight_decay: 0.0001
+  optimizer: 'adam'  # Options: 'adam', 'adamw'
+  scheduler: 'cosine'  # Options: 'cosine', 'plateau'
+  early_stopping_patience: 100
+  device: 'cuda'  # Options: 'cuda', 'cpu'
+
+# Logging Configuration
+logging:
+  use_wandb: false
+  wandb_project: 'geoformer'
+  wandb_entity: null
+  save_dir: './checkpoints'
+  log_interval: 10
+
+# Experiment Configuration
+experiment:
+  name: 'geoformer_experiment'
+  seed: 42
+  num_runs: 1  # Number of runs with different seeds for averaging
+
+# Benchmark Configuration
+benchmark:
+  datasets: ['MUTAG', 'PROTEINS', 'AIDS', 'CORA', 'AIRPORT']
+  models: ['hygt', 'spgt', 'geoformer_mix']
+  save_results: true
+  results_dir: './results'

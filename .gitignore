@@ -1,0 +1,30 @@
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Python cache and compiled files
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# IDE / editor configs
+.vscode/
+.idea/
+
+# Logs and temporary files
+*.log
+*.tmp
+
+# Model & Data files
+checkpoints/
+wandb/
+results/
+data/MUTAG
+data/PROTEINS
+data/AIDS
+data/CORA
+data/AIRPORT
