@@ -27,26 +27,54 @@ class Trainer:
         optimizer_type: str = 'adam',
         scheduler_type: str = 'cosine',
         use_wandb: bool = False,
+        curvature_learning_rate: float = None,  # NEW: Separate LR for curvature
     ):
         self.model = model.to(device)
         self.device = device
         self.use_wandb = use_wandb
         
-        # Initialize optimizer
+        # Use curvature_learning_rate if provided, otherwise use learning_rate
+        if curvature_learning_rate is None:
+            curvature_learning_rate = learning_rate
+        
+        # Separate parameters into curvature and regular parameters
+        curvature_params = []
+        regular_params = []
+        
+        for name, param in model.named_parameters():
+            if '_curvature_param' in name:
+                curvature_params.append(param)
+            else:
+                regular_params.append(param)
+        
+        # Create parameter groups with different learning rates
+        param_groups = []
+        if regular_params:
+            param_groups.append({
+                'params': regular_params,
+                'lr': learning_rate,
+                'weight_decay': weight_decay,
+            })
+        if curvature_params:
+            param_groups.append({
+                'params': curvature_params,
+                'lr': curvature_learning_rate,
+                'weight_decay': 0.0,  # No weight decay for curvature
+            })
+        
+        # Initialize optimizer with parameter groups
         if optimizer_type.lower() == 'adam':
-            self.optimizer = Adam(
-                model.parameters(),
-                lr=learning_rate,
-                weight_decay=weight_decay,
-            )
+            self.optimizer = Adam(param_groups)
         elif optimizer_type.lower() == 'adamw':
-            self.optimizer = AdamW(
-                model.parameters(),
-                lr=learning_rate,
-                weight_decay=weight_decay,
-            )
+            self.optimizer = AdamW(param_groups)
         else:
             raise ValueError(f"Unknown optimizer: {optimizer_type}")
+        
+        # Print learning rate info
+        if curvature_params:
+            print(f"Using separate learning rates:")
+            print(f"  Regular parameters: {learning_rate}")
+            print(f"  Curvature parameters ({len(curvature_params)}): {curvature_learning_rate}")
         
         # Initialize scheduler
         self.scheduler_type = scheduler_type
@@ -75,6 +103,43 @@ class Trainer:
                 patience=10,
                 verbose=True,
             )
+    
+    def _get_curvature_info(self) -> str:
+        """Get current curvature information if learnable."""
+        try:
+            from model.geoformer import HyGT, SpGT, GeoFormerMix
+            
+            # Check if model has learnable curvature
+            if isinstance(self.model, (HyGT, SpGT)):
+                # Single curvature models
+                if hasattr(self.model.manifold, 'learnable') and self.model.manifold.learnable:
+                    curv = self.model.manifold.get_curvature().item()
+                    model_type = "Hyperbolic" if isinstance(self.model, HyGT) else "Spherical"
+                    return f"Learned Curvature ({model_type}): κ = {curv:.6f}"
+            
+            elif isinstance(self.model, GeoFormerMix):
+                # Multi-head curvature model
+                curvatures = []
+                for layer in self.model.layers:
+                    attention = layer['attention']
+                    if hasattr(attention, 'learnable_curvature') and attention.learnable_curvature:
+                        layer_curvs = [param.item() for param in attention._curvature_params]
+                        curvatures.extend(layer_curvs)
+                
+                if curvatures:
+                    # Analyze geometry distribution
+                    hyp = sum(1 for c in curvatures if c < -1e-5)
+                    euc = sum(1 for c in curvatures if abs(c) <= 1e-5)
+                    sph = sum(1 for c in curvatures if c > 1e-5)
+                    avg_curv = sum(curvatures) / len(curvatures)
+                    
+                    return (f"Learned Curvatures (GeoFormerMix): "
+                           f"Hyp={hyp}, Euc={euc}, Sph={sph} | "
+                           f"Avg κ = {avg_curv:.6f}")
+            
+            return ""
+        except:
+            return ""
     
     def train_graph_classification(
         self,
@@ -140,12 +205,19 @@ class Trainer:
             else:
                 patience_counter += 1
             
+            # Get current curvature if learnable
+            curvature_info = self._get_curvature_info()
+            
             # Print progress
             epoch_time = time.time() - start_time
             print(f"Epoch {epoch+1}/{num_epochs} ({epoch_time:.2f}s) | "
                   f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f} | "
                   f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f} | "
                   f"Val F1: {val_f1:.4f} | Best Val Acc: {best_val_acc:.4f}")
+            
+            # Print curvature if learnable
+            if curvature_info:
+                print(f"  {curvature_info}")
             
             # Log to wandb if enabled
             if self.use_wandb:
@@ -323,6 +395,9 @@ class Trainer:
             else:
                 patience_counter += 1
             
+            # Get current curvature if learnable
+            curvature_info = self._get_curvature_info()
+            
             # Print progress
             if (epoch + 1) % 10 == 0:
                 epoch_time = time.time() - start_time
@@ -330,6 +405,10 @@ class Trainer:
                       f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.4f} | "
                       f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f} | "
                       f"Val F1: {val_f1:.4f}")
+                
+                # Print curvature if learnable
+                if curvature_info:
+                    print(f"  {curvature_info}")
             
             # Log to wandb if enabled
             if self.use_wandb:
@@ -455,6 +534,7 @@ def train_model(
         optimizer_type=config.get('optimizer', 'adam'),
         scheduler_type=config.get('scheduler', 'cosine'),
         use_wandb=config.get('use_wandb', False),
+        curvature_learning_rate=config.get('curvature_learning_rate', None),
     )
     
     # Save path

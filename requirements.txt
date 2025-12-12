@@ -12,3 +12,7 @@ tqdm
 wandb
 pandas
 geoopt
+scikit-learn
+pandas
+matplotlib
+seaborn

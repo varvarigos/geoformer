@@ -44,8 +44,14 @@ def train_single_model(config: dict):
     print(f"Device: {config['training']['device']}")
     print("="*80 + "\n")
     
-    # Set seeds
-    set_seeds(config['experiment']['seed'])
+    # Set seeds (handle both int and list)
+    seeds_config = config['experiment'].get('seeds', 42)
+    if isinstance(seeds_config, int):
+        seed = seeds_config
+    else:
+        # For single train mode, use first seed from list
+        seed = seeds_config[0]
+    set_seeds(seed)
     
     # Prepare data
     print("Loading dataset...")
@@ -85,6 +91,7 @@ def train_single_model(config: dict):
         dropout=config['model']['dropout'],
         curvature=curvature,
         curvatures=config['model'].get('curvatures', None),
+        learnable_curvature=config['model'].get('learnable_curvature', False),
     )
     
     num_params = sum(p.numel() for p in model.parameters())
@@ -109,6 +116,7 @@ def train_single_model(config: dict):
     train_config = {
         'device': config['training']['device'],
         'learning_rate': config['training']['learning_rate'],
+        'curvature_learning_rate': config['training'].get('curvature_learning_rate', None),
         'weight_decay': config['training']['weight_decay'],
         'optimizer': config['training']['optimizer'],
         'scheduler': config['training']['scheduler'],
@@ -151,8 +159,13 @@ def run_benchmark(config: dict):
     print("GEOFORMER BENCHMARK SUITE")
     print("="*80 + "\n")
     
-    # Set seeds
-    set_seeds(config['experiment']['seed'])
+    # Get first seed for initialization (handle both int and list)
+    seeds_config = config['experiment'].get('seeds', 42)
+    if isinstance(seeds_config, int):
+        first_seed = seeds_config
+    else:
+        first_seed = seeds_config[0]
+    set_seeds(first_seed)
     
     # Initialize benchmark
     benchmark = Benchmark(
@@ -160,11 +173,10 @@ def run_benchmark(config: dict):
         results_dir=config['benchmark']['results_dir'],
     )
     
-    # Run benchmark
+    # Run benchmark (seeds are now read from config inside benchmark)
     benchmark.run_benchmark(
         datasets=config['benchmark']['datasets'],
         models=config['benchmark']['models'],
-        num_runs=config['experiment']['num_runs'],
     )
     
     print("\nBenchmark results saved to:", config['benchmark']['results_dir'])

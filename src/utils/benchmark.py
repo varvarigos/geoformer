@@ -81,12 +81,14 @@ class Benchmark:
             curvature=self.config['model'].get('hyperbolic_curvature', -1.0) 
                       if model_type == 'hygt' else 
                       self.config['model'].get('spherical_curvature', 1.0),
+            learnable_curvature=self.config['model'].get('learnable_curvature', False),
         )
         
         # Train model
         train_config = {
             'device': self.config['training']['device'],
             'learning_rate': self.config['training']['learning_rate'],
+            'curvature_learning_rate': self.config['training'].get('curvature_learning_rate', None),
             'weight_decay': self.config['training']['weight_decay'],
             'optimizer': self.config['training']['optimizer'],
             'scheduler': self.config['training']['scheduler'],
@@ -126,7 +128,7 @@ class Benchmark:
         self,
         datasets: List[str],
         models: List[str],
-        num_runs: int = 3,
+        num_runs: int = None,  # Deprecated, kept for backward compatibility
     ):
         """
         Run comprehensive benchmark across datasets and models.
@@ -134,35 +136,42 @@ class Benchmark:
         Args:
             datasets: List of dataset names
             models: List of model types
-            num_runs: Number of runs per configuration (for averaging)
+            num_runs: Deprecated (use config['experiment']['seeds'] instead)
         """
+        # Get seeds from config (can be int or list)
+        seeds_config = self.config['experiment'].get('seeds', 42)
+        if isinstance(seeds_config, int):
+            seeds_list = [seeds_config]
+        else:
+            seeds_list = seeds_config
+        
         print("\n" + "="*80)
         print("STARTING COMPREHENSIVE BENCHMARK")
         print("="*80)
         print(f"Datasets: {datasets}")
         print(f"Models: {models}")
-        print(f"Runs per configuration: {num_runs}")
+        print(f"Seeds: {seeds_list}")
+        print(f"Total runs per model: {len(seeds_list)}")
         print("="*80 + "\n")
         
         for dataset in datasets:
             for model in models:
-                for run in range(num_runs):
-                    seed = self.config['experiment']['seed'] + run
-                    
+                for run_idx, seed in enumerate(seeds_list):
                     try:
                         results = self.run_experiment(
                             dataset_name=dataset,
                             model_type=model,
                             seed=seed,
                         )
-                        results['run'] = run
+                        results['run'] = run_idx
+                        results['seed'] = seed
                         self.results.append(results)
                         
                         # Save intermediate results
                         self.save_results()
                         
                     except Exception as e:
-                        print(f"Error in experiment {model} on {dataset} (run {run}): {e}")
+                        print(f"Error in experiment {model} on {dataset} (seed {seed}): {e}")
                         continue
         
         print("\n" + "="*80)

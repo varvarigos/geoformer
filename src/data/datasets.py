@@ -5,7 +5,7 @@ Supports PROTEINS, AIDS, MUTAG, Cora, and AIRPORT datasets.
 
 import torch
 import numpy as np
-from torch_geometric.datasets import TUDataset, Planetoid
+from torch_geometric.datasets import TUDataset, Planetoid, Airports
 from torch_geometric.data import Data, Dataset
 from torch_geometric.utils import to_undirected
 from typing import Tuple, Optional, List
@@ -77,65 +77,13 @@ class DatasetLoader:
         return dataset, num_features, num_classes
     
     def _load_airport(self):
-        """
-        Load AIRPORT dataset.
-        This is a synthetic airport network dataset.
-        If not available, we'll create a simple version.
-        """
-        try:
-            # Try to load from file if available
-            dataset = torch.load(os.path.join(self.root, 'AIRPORT', 'airport.pt'))
-            num_features = dataset[0].x.shape[1]
-            num_classes = len(torch.unique(dataset[0].y))
-        except:
-            # Create a simple synthetic airport network
-            print("Creating synthetic AIRPORT dataset...")
-            dataset = self._create_synthetic_airport()
-            num_features = dataset[0].x.shape[1]
-            num_classes = len(torch.unique(dataset[0].y))
-            
-            # Save for future use
-            os.makedirs(os.path.join(self.root, 'AIRPORT'), exist_ok=True)
-            torch.save(dataset, os.path.join(self.root, 'AIRPORT', 'airport.pt'))
+        """Load AIRPORT dataset from PyTorch Geometric (USA variant)."""
+        dataset = Airports(root=os.path.join(self.root, 'Airports'), name='USA')
+        
+        num_features = dataset.num_features
+        num_classes = dataset.num_classes
         
         return dataset, num_features, num_classes
-    
-    def _create_synthetic_airport(self):
-        """Create a synthetic airport network dataset."""
-        # Create a simple airport network with regional hubs
-        num_nodes = 500
-        num_regions = 10
-        
-        # Node features: [latitude, longitude, traffic, size]
-        x = torch.randn(num_nodes, 4)
-        
-        # Assign nodes to regions (labels)
-        y = torch.randint(0, num_regions, (num_nodes,))
-        
-        # Create edges: connect airports within regions and some between regions
-        edge_list = []
-        
-        for region in range(num_regions):
-            region_nodes = (y == region).nonzero(as_tuple=True)[0]
-            # Connect within region (dense)
-            for i in region_nodes:
-                for j in region_nodes:
-                    if i < j and torch.rand(1).item() < 0.3:
-                        edge_list.append([i.item(), j.item()])
-        
-        # Connect between regions (sparse)
-        for i in range(num_nodes):
-            for j in range(i+1, num_nodes):
-                if y[i] != y[j] and torch.rand(1).item() < 0.01:
-                    edge_list.append([i, j])
-        
-        edge_index = torch.tensor(edge_list, dtype=torch.long).t()
-        edge_index = to_undirected(edge_index)
-        
-        data = Data(x=x, edge_index=edge_index, y=y)
-        
-        # Return as a list (dataset format)
-        return [data]
 
 
 def split_dataset(
@@ -234,9 +182,30 @@ def prepare_data(
     loader = DatasetLoader(root=root)
     dataset, num_features, num_classes = loader.load_dataset(dataset_name)
     
-    # For node classification datasets (like Cora), use built-in masks
-    if dataset_name.upper() == 'CORA':
+    # For node classification datasets (like Cora and AIRPORT), use built-in masks
+    if dataset_name.upper() in ['CORA', 'AIRPORT']:
         data = dataset[0]
+        
+        # For AIRPORT, create train/val/test masks if not present
+        if dataset_name.upper() == 'AIRPORT' and not hasattr(data, 'train_mask'):
+            num_nodes = data.num_nodes
+            indices = torch.randperm(num_nodes)
+            
+            train_size = int(train_ratio * num_nodes)
+            val_size = int(val_ratio * num_nodes)
+            
+            train_mask = torch.zeros(num_nodes, dtype=torch.bool)
+            val_mask = torch.zeros(num_nodes, dtype=torch.bool)
+            test_mask = torch.zeros(num_nodes, dtype=torch.bool)
+            
+            train_mask[indices[:train_size]] = True
+            val_mask[indices[train_size:train_size + val_size]] = True
+            test_mask[indices[train_size + val_size:]] = True
+            
+            data.train_mask = train_mask
+            data.val_mask = val_mask
+            data.test_mask = test_mask
+        
         return {
             'data': data,
             'num_features': num_features,

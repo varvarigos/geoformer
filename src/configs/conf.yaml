@@ -4,13 +4,16 @@
 model:
   type: 'geoformer_mix'  # Options: 'hygt', 'spgt', 'geoformer_mix'
   hidden_channels: 64
-  num_layers: 2
-  num_heads: 8
+  num_layers: 3
+  num_heads: 9
   dropout: 0.5
   
   # Geometry-specific parameters
-  hyperbolic_curvature: -1.0
-  spherical_curvature: 1.0
+  hyperbolic_curvature: -0.5
+  spherical_curvature: 0.5
+  
+  # Learnable curvature (if true, curvature is learned during training)
+  learnable_curvature: true  # Options: true, false
   
   # For GeoFormer-Mix: curvatures per head (null = default split)
   curvatures: null
@@ -28,11 +31,12 @@ dataset:
 # Training Configuration
 training:
   num_epochs: 100
-  learning_rate: 0.0001  # Lowered for manifold stability
+  learning_rate: 0.0001
+  curvature_learning_rate: 0.01  # Separate LR for learnable curvature
   weight_decay: 0.0001
   optimizer: 'adam'  # Options: 'adam', 'adamw'
   scheduler: 'cosine'  # Options: 'cosine', 'plateau'
-  early_stopping_patience: 100
+  early_stopping_patience: 10
   device: 'cuda'  # Options: 'cuda', 'cpu'
 
 # Logging Configuration
@@ -46,8 +50,7 @@ logging:
 # Experiment Configuration
 experiment:
   name: 'geoformer_experiment'
-  seed: 42
-  num_runs: 1  # Number of runs with different seeds for averaging
+  seeds: [42, 123]  # Single int or list of ints for multiple runs
 
 # Benchmark Configuration
 benchmark:

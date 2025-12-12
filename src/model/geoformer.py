@@ -33,8 +33,8 @@ class GeometricLinear(nn.Module):
         self.reset_parameters()
     
     def reset_parameters(self):
-        # Use smaller initialization for manifold operations to avoid numerical issues
-        nn.init.xavier_uniform_(self.weight, gain=0.01)
+        # Standard initialization
+        nn.init.xavier_uniform_(self.weight, gain=1.0)
         if self.bias is not None:
             nn.init.zeros_(self.bias)
     
@@ -107,11 +107,11 @@ class GeometricAttention(MessagePassing):
         self.lin_key = GeometricLinear(in_channels, heads * out_channels, self.manifold, bias=bias)
         self.lin_value = GeometricLinear(in_channels, heads * out_channels, self.manifold, bias=bias)
         
-        # Output projection
+        # Output projection - use regular Linear to avoid dimension mismatch
         if concat:
-            self.lin_out = GeometricLinear(heads * out_channels, heads * out_channels, self.manifold, bias=bias)
+            self.lin_out = nn.Linear(heads * out_channels, in_channels, bias=bias)
         else:
-            self.lin_out = GeometricLinear(out_channels, out_channels, self.manifold, bias=bias)
+            self.lin_out = nn.Linear(out_channels, in_channels, bias=bias)
         
         # Attention scaling
         self.scale = 1.0 / math.sqrt(out_channels)
@@ -359,10 +359,11 @@ class HyGT(nn.Module):
         num_heads: int = 8,
         dropout: float = 0.1,
         curvature: float = -1.0,
+        learnable_curvature: bool = False,
     ):
         super().__init__()
         
-        self.manifold = HyperbolicManifold(curvature=curvature)
+        self.manifold = HyperbolicManifold(curvature=curvature, learnable=learnable_curvature)
         
         # Input embedding
         self.embedding = GeometricLinear(in_channels, hidden_channels, self.manifold)
@@ -411,10 +412,11 @@ class SpGT(nn.Module):
         num_heads: int = 8,
         dropout: float = 0.1,
         curvature: float = 1.0,
+        learnable_curvature: bool = False,
     ):
         super().__init__()
         
-        self.manifold = SphericalManifold(curvature=curvature)
+        self.manifold = SphericalManifold(curvature=curvature, learnable=learnable_curvature)
         
         # Input embedding
         self.embedding = GeometricLinear(in_channels, hidden_channels, self.manifold)
@@ -462,6 +464,7 @@ class MixedGeometricAttention(MessagePassing):
         concat: bool = True,
         dropout: float = 0.0,
         curvatures: List[float] = None,  # One per head
+        learnable_curvature: bool = False,  # NEW: make curvatures learnable
         bias: bool = True,
     ):
         super().__init__(node_dim=0, aggr='add')
@@ -471,6 +474,7 @@ class MixedGeometricAttention(MessagePassing):
         self.heads = heads
         self.concat = concat
         self.dropout = dropout
+        self.learnable_curvature = learnable_curvature
         
         # Default: split heads equally among geometries
         if curvatures is None:
@@ -483,10 +487,21 @@ class MixedGeometricAttention(MessagePassing):
         
         assert len(curvatures) == heads, "Must provide one curvature per head"
         
-        # Create manifold for each head
-        self.manifolds = nn.ModuleList([
-            get_manifold(curv) for curv in curvatures
-        ])
+        if learnable_curvature:
+            # Store learnable curvature parameters with random initialization
+            # Initialize each head near its assigned geometry with random perturbation
+            self._curvature_params = nn.ParameterList([
+                self._init_curvature_param(curv) for curv in curvatures
+            ])
+            # Create placeholder manifolds (will be updated dynamically)
+            self.manifolds = nn.ModuleList([
+                get_manifold(curv) for curv in curvatures
+            ])
+        else:
+            # Create fixed manifolds for each head
+            self.manifolds = nn.ModuleList([
+                get_manifold(curv) for curv in curvatures
+            ])
         
         # Separate Q, K, V projections for each head
         self.head_projections = nn.ModuleList([
@@ -508,6 +523,25 @@ class MixedGeometricAttention(MessagePassing):
         
         self.reset_parameters()
     
+    def _init_curvature_param(self, assigned_curv: float) -> nn.Parameter:
+        """
+        Initialize curvature parameter based on assigned geometry with random variation.
+        Keeps each head in its designated geometry (hyperbolic/euclidean/spherical).
+        """
+        if abs(assigned_curv) < 1e-5:  # Euclidean
+            # Stay near 0: θ ∈ [-0.5, 0.5]
+            init_val = torch.empty(1).uniform_(-0.5, 0.5).item()
+        elif assigned_curv < 0:  # Hyperbolic
+            # θ ∈ [0, 2] gives κ ∈ [-exp(2), -1] ≈ [-7.4, -1.0]
+            # Ensures heads stay negative
+            init_val = torch.empty(1).uniform_(0.0, 2.0).item()
+        else:  # Spherical (assigned_curv > 0)
+            # θ ∈ [-2, 0] gives κ ∈ [exp(-2), 1] ≈ [0.14, 1.0]
+            # Ensures heads stay positive
+            init_val = torch.empty(1).uniform_(-2.0, 0.0).item()
+        
+        return nn.Parameter(torch.tensor(init_val))
+    
     def reset_parameters(self):
         for proj_dict in self.head_projections:
             proj_dict['query'].reset_parameters()
@@ -526,6 +560,33 @@ class MixedGeometricAttention(MessagePassing):
         Each head operates in its own geometric space.
         """
         head_outputs = []
+        
+        # Update manifolds with learnable curvatures if applicable
+        if self.learnable_curvature:
+            for h, (manifold, curv_param) in enumerate(zip(self.manifolds, self._curvature_params)):
+                # For GeoFormerMix, curvatures are unconstrained (can learn any geometry)
+                current_curv = curv_param.clamp(-10, 10)  # Numerical stability
+                
+                # Dynamically update manifold type based on current curvature with proper clipping
+                if abs(current_curv) < 1e-5:  # Near zero -> Euclidean
+                    if not isinstance(manifold, EuclideanManifold):
+                        self.manifolds[h] = EuclideanManifold()
+                elif current_curv < -1e-5:  # Negative -> Hyperbolic
+                    # Clip to ensure it's sufficiently negative
+                    clipped_curv = min(current_curv.item(), -1e-4)
+                    if not isinstance(manifold, HyperbolicManifold):
+                        self.manifolds[h] = HyperbolicManifold(curvature=clipped_curv, learnable=False)
+                    else:
+                        # Update curvature buffer with clipped value
+                        manifold._curvature_value = torch.tensor(clipped_curv)
+                else:  # Positive -> Spherical (current_curv > 1e-5)
+                    # Clip to ensure it's sufficiently positive
+                    clipped_curv = max(current_curv.item(), 1e-4)
+                    if not isinstance(manifold, SphericalManifold):
+                        self.manifolds[h] = SphericalManifold(curvature=clipped_curv, learnable=False)
+                    else:
+                        # Update curvature buffer with clipped value
+                        manifold._curvature_value = torch.tensor(clipped_curv)
         
         # Process each head in its respective geometry
         for h, (manifold, projections) in enumerate(zip(self.manifolds, self.head_projections)):
@@ -601,6 +662,7 @@ class GeoFormerMix(nn.Module):
         num_heads: int = 9,  # Divisible by 3 for equal geometry split
         dropout: float = 0.1,
         curvatures: List[float] = None,
+        learnable_curvature: bool = False,  # NEW: per-head learnable curvatures
     ):
         super().__init__()
         
@@ -626,6 +688,7 @@ class GeoFormerMix(nn.Module):
                 concat=True,
                 dropout=dropout,
                 curvatures=curvatures,
+                learnable_curvature=learnable_curvature,  # Pass learnable flag
             )
             
             # Projection to ensure dimension matches
@@ -708,6 +771,7 @@ def build_model(
             num_heads=num_heads,
             dropout=dropout,
             curvature=kwargs.get('curvature', -1.0),
+            learnable_curvature=kwargs.get('learnable_curvature', False),
         )
     elif model_type == 'spgt':
         return SpGT(
@@ -718,6 +782,7 @@ def build_model(
             num_heads=num_heads,
             dropout=dropout,
             curvature=kwargs.get('curvature', 1.0),
+            learnable_curvature=kwargs.get('learnable_curvature', False),
         )
     elif model_type == 'geoformer_mix':
         return GeoFormerMix(
@@ -728,6 +793,7 @@ def build_model(
             num_heads=num_heads,
             dropout=dropout,
             curvatures=kwargs.get('curvatures', None),
+            learnable_curvature=kwargs.get('learnable_curvature', False),
         )
     else:
         raise ValueError(f"Unknown model type: {model_type}. Choose from ['hygt', 'spgt', 'geoformer_mix']")
