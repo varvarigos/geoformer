@@ -1,6 +1,6 @@
 # GeoFormer: Geometry-Aware Graph Transformer Framework
 
-A unified non-Euclidean Graph Transformer framework that learns directly in curved manifolds. GeoFormer extends self-attention and feed-forward computation to non-Euclidean manifolds of constant curvature κ, preserving geodesic distances and angular relations between nodes.
+A unified non-Euclidean Graph Transformer framework that learns directly in curved manifolds. GeoFormer extends self-attention and feed-forward computation to non-Euclidean manifolds of learnable curvature κ, preserving geodesic distances and angular relations between nodes.
 
 ## 🌟 Key Features
 
@@ -134,7 +134,7 @@ Options:
   --config PATH           Path to config file (default: src/configs/conf.yaml)
   --mode {train,benchmark}  Operation mode
   --model {hygt,spgt,geoformer_mix,auto}  Model type
-  --dataset NAME          Dataset name (PROTEINS, AIDS, MUTAG, CORA, AIRPORT)
+  --dataset NAME          Dataset name (PROTEINS, AIDS, MUTAG, CORA)
   --device {cuda,cpu}     Device to use
   --epochs INT            Number of training epochs
   --seed INT              Random seed
@@ -149,7 +149,6 @@ Options:
 | **AIDS** | Graph Classification | Molecular | GeoFormer-Mix | Molecular graphs with varying structures |
 | **MUTAG** | Graph Classification | Molecular | GeoFormer-Mix | Small molecular compounds |
 | **Cora** | Node Classification | Citation | HyGT | Citation network with hierarchical structure |
-| **AIRPORT** | Node Classification | Transportation | SpGT | Transportation network with cyclic patterns |
 
 ## 🏗️ Model Architecture
 
