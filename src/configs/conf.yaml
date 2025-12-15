@@ -20,7 +20,7 @@ model:
 
 # Dataset Configuration
 dataset:
-  name: 'PROTEINS'  # Options: 'PROTEINS', 'AIDS', 'MUTAG', 'CORA', 'AIRPORT'
+  name: 'PROTEINS'  # Options: 'PROTEINS', 'AIDS', 'MUTAG', 'CORA'
   root: './data'
   batch_size: 64
   train_ratio: 0.8
@@ -54,7 +54,7 @@ experiment:
 
 # Benchmark Configuration
 benchmark:
-  datasets: ['MUTAG', 'PROTEINS', 'AIDS', 'CORA', 'AIRPORT']
+  datasets: ['MUTAG', 'PROTEINS', 'AIDS', 'CORA']
   models: ['hygt', 'spgt', 'geoformer_mix']
   save_results: true
   results_dir: './results'
